@@ -1,7 +1,7 @@
 # web parser
 from html.parser import HTMLParser
 import requests
-
+import threading
 # date convert to url 
 import datetime
 from urllib.parse import urlparse, urlencode, quote_plus, parse_qs
@@ -142,50 +142,109 @@ class WeatherData:
     base = 'https://climate.weather.gc.ca/climate_data/daily_data_e.html?StationID=27174&timeframe=2&Day=1'
     
     def __init__(self):
-        
-        now = datetime.datetime.now()
-        self.year = now.year
-        self.month = now.month
-        self.weather_parser = WeatherParser()
+        self.now = datetime.datetime.now()
+        self.start_year = self.now.year
+        self.end_year = 0
+        self.end_month = 0
         self.db = WeatherDB()
+
+        self.thread = []
         
-    def url(self):
+    def url(self, year, month):
         base_data = urlparse(self.base)
         base_query = parse_qs(base_data.query)
-        base_query['Year'] = [self.year]
-        base_query['Month'] = [self.month]
-        base_query['StartYear'] = [self.year-1]
-        base_query['EndYear'] = [self.year]
+        base_query['Year'] = [year]
+        base_query['Month'] = [month]
+        base_query['StartYear'] = [year-1]
+        base_query['EndYear'] = [year]
         new_query = urlencode(base_query, doseq=True)
         return f"{base_data.scheme}://{base_data.netloc}{base_data.path}?{new_query}"
     
-    
-    def dealPath(self, path):
-        path_query = parse_qs(urlparse(path).query)
-        # print(path_query)
-        self.year = int(path_query['Year'][0])
-        self.month = int(path_query['Month'][0])
+    def insert_data(self, year, month, data):
+        for day in data:
+            self.db.insert(year, month, day['day'], day['detail']['Max'], day['detail']['Min'], day['detail']['Mean'])
+
+
+
+    def deal_month_data(self, year, month, retry=0):
+        url = self.url(year, month)
+        weather_parser = WeatherParser()
+        print(f"get data ===> year: {year}, month: {month}")
+        try:
+            with requests.get(url, timeout=50) as response:
+                weather_parser.feed(response.content.decode('utf-8'))
+            self.insert_data(year, month, weather_parser.month)
+        except Exception as e:
+            if retry < 3:
+                print(f"retry {retry} ===> year: {year}, month: {month}")
+                return self.deal_month_data(year, month, retry+1)
+            return False
+        return weather_parser.is_before_month
+
+
+    def deal_year_data(self, year):
+        #month 12 to 1
+        start_month = 12
+        stop_month = 0
+        
+        # check if start year is current year
+        if year == self.now.year:
+            start_month = self.now.month
+            # check if end month is exist
+            if self.end_month > 0:
+                stop_month = self.end_month - 1
+        for month in range(start_month, stop_month, -1):
+            is_before_month = self.deal_month_data(year, month)
+            if not is_before_month:
+                self.end_year = year
+                break
+            
+    def load_data(self):
+        # chech db data is not empty 
+        with self.db.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT COUNT(*) FROM weather_daily')
+            count = cursor.fetchone()[0]
+            if count > 0:
+                cursor.execute('SELECT MAX(year) FROM weather_daily')
+                self.end_year = cursor.fetchone()[0]
+                print(f"database lastest year: {self.end_year}")
+                # get the lastest month within the year
+                cursor.execute('SELECT MAX(month) FROM weather_daily WHERE year = ?', (self.end_year,))
+                self.end_month = cursor.fetchone()[0]
+
+        self.get_data()
+                
+                
         
     def get_data(self):
-        # print(self.url())
-        self.weather_parser = WeatherParser()
-        with requests.get(self.url()) as response:
-            self.weather_parser.feed(response.content.decode('utf-8'))
-        
-        for day in self.weather_parser.month:
-            #print(day)
-            self.db.insert(self.year, self.month, day['day'], day['detail']['Max'], day['detail']['Min'], day['detail']['Mean'])
-                
-        print(f"year: {self.year}, month: {self.month}")
-        if (self.weather_parser.is_before_month):
-            self.dealPath(self.weather_parser.before_month)
+        # threading count
+        threading_count = 8
+        # check if start year bwteen end year less than threading count
+        if self.start_year - threading_count < self.end_year:
+            threading_count = self.start_year - self.end_year + 1
+        # get date from now to last year multiple thread limit to 8
+        for year in range(self.start_year, self.start_year-threading_count, -1):
+            t = threading.Thread(target=self.deal_year_data, args=(year,))
+            self.thread.append(t)
+            t.start()
+
+        self.wait_deal()
+
+        self.start_year = self.start_year-threading_count
+        if self.start_year > self.end_year:
             self.get_data()
+
+
             
-            
+    def wait_deal(self):
+        for t in self.thread:
+            t.join()
 
 
 
 
 if __name__ == '__main__':
     weather_data = WeatherData()
-    weather_data.get_data()
+    weather_data.load_data()
+
