@@ -1,34 +1,103 @@
 """Main view."""
+import threading
+
 import wx
+import weather
 
 
 class MainView(wx.Frame):
     """UI class."""
 
-    def __init__(self, *args, **kw):
+    def __init__(self):
         # ensure the parent's __init__ is called
-        super(MainView, self).__init__(*args, **kw)
+        super().__init__(None, title="Weather Processing APP", size=(1600, 900))
          # create a panel in the frame
-        pnl = wx.Panel(self)
+        self.db = weather.WeatherDB()
+        panel = wx.Panel(self)
 
-        # put some text with a larger bold font on it
-        st = wx.StaticText(pnl, label="Hello World!")
-        font = st.GetFont()
+        # show main title
+        self.main_title = wx.StaticText(panel, label="Main View Loading...")
+        font = self.main_title.GetFont()
         font.PointSize += 10
         font = font.Bold()
-        st.SetFont(font)
+        self.main_title.SetFont(font)
 
         # and create a sizer to manage the layout of child widgets
-        sizer = wx.BoxSizer(wx.VERTICAL)
-        sizer.Add(st, wx.SizerFlags().Border(wx.TOP|wx.LEFT, 25))
-        pnl.SetSizer(sizer)
+        main_sizer = wx.BoxSizer(wx.VERTICAL)
+        main_sizer.Add(self.main_title, flag=wx.ALL, border=5)
 
-        # create a menu bar
-        self.makeMenuBar()
+        date_sizer = wx.BoxSizer(wx.HORIZONTAL)
+
+        # from year
+        # from_label = wx.StaticText(panel, label="From:")
+        # self.from_year = wx.ComboBox(self, choices=[], style=wx.CB_READONLY)
+        #
+        # date_sizer.Add(from_label, flag=wx.Right, border=8)
+        # date_sizer.Add(self.from_year, proportion=1, flag=wx.Right, border=8)
+        #
+        # # to year
+        # to_label = wx.StaticText(panel, label="To:")
+        # self.to_year = wx.ComboBox(self, choices=[], style=wx.CB_READONLY)
+        #
+        # date_sizer.Add(to_label, 0, flag=wx.ALL, border=8)
+        # date_sizer.Add(self.to_year, proportion=1, flag=wx.Right, border=8)
+        #
+        # # add date sizer to main sizer
+        # main_sizer.Add(date_sizer, flag=wx.EXPAND|wx.LEFT|wx.RIGHT, border=10)
 
         # and a status bar
         self.CreateStatusBar()
-        self.SetStatusText("Welcome to wxPython!")
+        # bind event to status bar
+        self.Bind(weather.EVT_UPDATE_EVENT, self.on_update)
+
+        # add sizer to panel
+        panel.SetSizer(main_sizer)
+        # create a menu bar
+        self.makeMenuBar()
+        # get data by weather data class
+        self.get_date()
+
+
+
+    def on_update(self, event):
+        """Update event."""
+        self.SetStatusText(event.message)
+
+
+    def get_date(self):
+        """Get the lastest date from database."""
+        self.SetStatusText("Gettting the lastest date from internet...")
+        weather_data = weather.WeatherData()
+        weather_data.load_data(self)
+        self.SetStatusText("Get the lastest date from internet done")
+        self.main_title.Label = "Main View"
+
+        # get data from database
+        with self.db.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT DISTINCT year FROM weather_daily ORDER BY year DESC')
+            years = cursor.fetchall()
+            years = [str(year[0]) for year in years]
+            # self.from_year.SetItems(years)
+            # self.to_year.SetItems(years)
+
+
+
+
+    def year_select_change(self, event):
+        # get data from database
+        with self.db.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT DISTINCT month FROM weather_daily WHERE year = ? ORDER BY month DESC', (self.year_select.Value,))
+            months = cursor.fetchall()
+            months = [str(month[0]) for month in months]
+            self.month_select.SetItems(months)
+
+    def month_select_change(self, event):
+        year = self.year_select.Value
+        month = self.month_select.Value
+
+        print(f"year: {year}, month: {month}")
 
 
     def makeMenuBar(self):

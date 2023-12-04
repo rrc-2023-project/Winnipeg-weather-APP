@@ -1,12 +1,12 @@
 import wx
 
-from views.main import MainView
+from gui.main_view import MainView
 
 # Next, create an application object.
 app = wx.App()
 
 # Then a frame.
-frm = MainView(None, title="Weather Processing APP")
+frm = MainView()
 
 # Show it.
 frm.Show()

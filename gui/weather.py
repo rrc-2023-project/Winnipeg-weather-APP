@@ -10,6 +10,12 @@ from urllib.parse import urlparse, urlencode, quote_plus, parse_qs
 import sqlite3
 from contextlib import contextmanager
 
+import wx
+import wx.lib.newevent
+
+# event
+UpdateEvent, EVT_UPDATE_EVENT = wx.lib.newevent.NewEvent()
+
 def is_float(num):
     try:
         float(num)
@@ -190,7 +196,7 @@ class WeatherData:
         # check if start year is current year
         if year == self.now.year:
             start_month = self.now.month
-            # check if end month is exist
+            # check if end month is existed
             if self.end_month > 0:
                 stop_month = self.end_month - 1
         for month in range(start_month, stop_month, -1):
@@ -199,9 +205,10 @@ class WeatherData:
                 self.end_year = year
                 break
             
-    def load_data(self):
+    def load_data(self, frame):
         # chech db data is not empty 
         with self.db.get_connection() as conn:
+            wx.PostEvent(frame, UpdateEvent(message="Check database..."))
             cursor = conn.cursor()
             cursor.execute('SELECT COUNT(*) FROM weather_daily')
             count = cursor.fetchone()[0]
@@ -213,16 +220,19 @@ class WeatherData:
                 cursor.execute('SELECT MAX(month) FROM weather_daily WHERE year = ?', (self.end_year,))
                 self.end_month = cursor.fetchone()[0]
 
-        self.get_data()
+        self.get_data(frame)
                 
                 
         
-    def get_data(self):
+    def get_data(self, frame):
         # threading count
         threading_count = 8
+
         # check if start year bwteen end year less than threading count
         if self.start_year - threading_count < self.end_year:
             threading_count = self.start_year - self.end_year + 1
+        # notify status
+        wx.PostEvent(frame, UpdateEvent(message=f"Getting the lastest date by {threading_count} threads: {self.start_year} to {self.start_year-threading_count}..."))
         # get date from now to last year multiple thread limit to 8
         for year in range(self.start_year, self.start_year-threading_count, -1):
             t = threading.Thread(target=self.deal_year_data, args=(year,))
@@ -233,7 +243,7 @@ class WeatherData:
 
         self.start_year = self.start_year-threading_count
         if self.start_year > self.end_year:
-            self.get_data()
+            self.get_data(frame)
 
 
             
