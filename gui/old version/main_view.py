@@ -2,7 +2,7 @@
 import threading
 
 import wx
-import weather
+import scrape_weather as weather
 
 
 class MainView(wx.Frame):

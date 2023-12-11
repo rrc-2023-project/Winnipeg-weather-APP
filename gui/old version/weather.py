@@ -62,7 +62,8 @@ class WeatherDB:
             
             
 
-class WeatherParser(HTMLParser):
+class WeatherScraper(HTMLParser):
+    '''Weather Scraper class to parse the weather data from the HTML page,  and store it in a dictionary.'''
     def __init__(self, *, convert_charrefs=True):
         super().__init__(convert_charrefs=convert_charrefs)
         self.table = False
@@ -133,6 +134,7 @@ class WeatherParser(HTMLParser):
                     if len(self.day_detail) > 0:
                         #  {“Max”: 12.0, “Min”: 5.6, “Mean”: 7.1}
                         if is_float(self.day_detail[0]) and is_float(self.day_detail[1]) and is_float(self.day_detail[2]):
+                            # day_data is a dict of each day temperature
                             day_data = {'Max': float(self.day_detail[0]), 'Min': float(self.day_detail[1]), 'Mean': float(self.day_detail[2])}
                             self.month.append({'day': int(self.day), 'detail': day_data})
                             self.day_detail = []
@@ -140,6 +142,7 @@ class WeatherParser(HTMLParser):
                     
                 
             if self.td and self.day.isdigit():
+                # day detail is a list of day temperature
                 self.day_detail.append(data)
                 
 
@@ -174,7 +177,7 @@ class WeatherData:
 
     def deal_month_data(self, year, month, retry=0):
         url = self.url(year, month)
-        weather_parser = WeatherParser()
+        weather_parser = WeatherScraper()
         print(f"get data ===> year: {year}, month: {month}")
         try:
             with requests.get(url, timeout=50) as response:

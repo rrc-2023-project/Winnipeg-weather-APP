@@ -1,6 +1,6 @@
 import wx
 
-from gui.main_view import MainView
+from main_view import MainView
 
 # Next, create an application object.
 app = wx.App()
